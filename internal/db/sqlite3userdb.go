@@ -4,7 +4,10 @@
 package db
 
 import (
+	"bytes"
+	"encoding/base64"
 	"fmt"
+	"image/png"
 	"sync"
 	"time"
 
@@ -13,6 +16,8 @@ import (
 
 	"crawshaw.io/sqlite"
 	"crawshaw.io/sqlite/sqlitex"
+
+	"github.com/pquerna/otp/totp"
 )
 
 type Sqlite3UserDb struct {
@@ -27,7 +32,7 @@ func (db *Sqlite3UserDb) Open(fp string) {
 		DbL.Fatalln(err)
 	}
 
-	err = sqlitex.ExecScript(db.Db, `create table if not exists userdb (username text unique,password text,token text unique,usertype integer,createdat text);`)
+	err = sqlitex.ExecScript(db.Db, `create table if not exists userdb (username text unique,secret text unique,totpimage text unique,password text,token text unique,usertype integer,createdat text);`)
 
 	if err != nil {
 		DbL.Fatalln(err)
@@ -43,7 +48,7 @@ func (db *Sqlite3UserDb) Close() {
 	}
 }
 
-func (db *Sqlite3UserDb) Add(Username string, Password string, UserType int) (err error) {
+func (db *Sqlite3UserDb) Add(Username string, Secret string, TotpImage string, Password string, UserType int) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("uuid error") // uuid may panic
@@ -58,7 +63,7 @@ func (db *Sqlite3UserDb) Add(Username string, Password string, UserType int) (er
 	}
 	db.mu.Lock()
 	defer db.mu.Unlock()
-	err = sqlitex.Exec(db.Db, `insert into userdb (username,password,token,usertype,createdat) values (?,?,?,?,?);`, nil, Username, string(bytes), uuid.New().String(), UserType, time.Now().Format(time.RFC3339))
+	err = sqlitex.Exec(db.Db, `insert into userdb (username,secret,totpimage,password,token,usertype,createdat) values (?,?,?,?,?,?,?);`, nil, Username, Secret, TotpImage, string(bytes), uuid.New().String(), UserType, time.Now().Format(time.RFC3339))
 	return
 }
 
@@ -80,6 +85,89 @@ func (db *Sqlite3UserDb) UpdatePw(Username string, Password string) (err error) 
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	err = sqlitex.Exec(db.Db, `update userdb set password=? where username=?;`, nil, string(bytes), Username)
+	return
+}
+
+func (db *Sqlite3UserDb) UpdateOtpSecret(Username string) (err error) {
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      "exatorrent",
+		AccountName: Username,
+	})
+	if err != nil {
+		panic(err)
+	}
+	Secret := key.Secret()
+	// convert TOTP to image
+	var buf bytes.Buffer
+	img, err := key.Image(500, 500)
+	if err != nil {
+		panic(err)
+	}
+	png.Encode(&buf, img)
+	TotpImage := base64.StdEncoding.EncodeToString(buf.Bytes())
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	err = sqlitex.Exec(db.Db, `update userdb set secret=? where username=?;`, nil, string(Secret), Username)
+	if err != nil {
+		panic(err)
+	}
+	DbL.Printf("Image is : %s", TotpImage)
+	err = sqlitex.Exec(db.Db, `update userdb set totpimage=? where username=?;`, nil, string(TotpImage), Username)
+	return
+}
+func (db *Sqlite3UserDb) DeleteOtpSecret(Username string) (err error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	err = sqlitex.Exec(db.Db, `update userdb set secret=? where username=?;`, nil, "", Username)
+	if err != nil {
+		panic(err)
+	}
+	err = sqlitex.Exec(db.Db, `update userdb set totpimage=? where username=?;`, nil, "", Username)
+	return
+}
+
+func (db *Sqlite3UserDb) GetOtpSecret(Username string) (secret string, err error) {
+	var exists bool
+	var serr error
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	serr = sqlitex.Exec(
+		db.Db, `select secret from userdb where username=?;`,
+		func(stmt *sqlite.Stmt) error {
+			exists = true
+			secret = stmt.GetText("secret")
+			return nil
+		}, Username)
+	if serr != nil {
+		DbL.Printf("Error reading TOTP secret %s", serr)
+		return "", serr
+	}
+	if !exists {
+		DbL.Printf("Error reading TOTP secret. User not exist. %s", serr)
+		return "", serr
+	}
+	return
+}
+func (db *Sqlite3UserDb) GetTotpImage(Username string) (image string, err error) {
+	var exists bool
+	var serr error
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	serr = sqlitex.Exec(
+		db.Db, `select totpimage from userdb where username=?;`,
+		func(stmt *sqlite.Stmt) error {
+			exists = true
+			image = stmt.GetText("totpimage")
+			return nil
+		}, Username)
+	if serr != nil {
+		DbL.Printf("Error reading TOTP image %s", serr)
+		return "", serr
+	}
+	if !exists {
+		DbL.Printf("Error reading TOTP image. User not exist. %s", serr)
+		return "", serr
+	}
 	return
 }
 
@@ -126,6 +214,35 @@ func (db *Sqlite3UserDb) GetUsers() (ret []*User) {
 			return nil
 		})
 	return
+}
+
+func (db *Sqlite3UserDb) IsTotpSet(Username string) (ret bool) {
+	var exists bool
+	var serr error
+	var totpSecret string
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	serr = sqlitex.Exec(
+		db.Db, `select secret from userdb where username=?;`,
+		func(stmt *sqlite.Stmt) error {
+			exists = true
+			totpSecret = stmt.GetText("secret")
+			return nil
+		}, Username)
+
+	if serr != nil {
+		return false
+	}
+	if !exists {
+		return false
+	}
+	if totpSecret == "" {
+		DbL.Printf("Totp status is %t for user %s", false, Username)
+		return false
+	} else {
+		DbL.Printf("Totp status is %t for user %s", true, Username)
+		return true
+	}
 }
 
 func (db *Sqlite3UserDb) Validate(Username string, Password string) (ut int, ret bool) {

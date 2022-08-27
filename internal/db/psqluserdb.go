@@ -1,13 +1,18 @@
 package db
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"image/png"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/pquerna/otp/totp"
 )
 
 type PsqlUserDb struct {
@@ -21,7 +26,7 @@ func (db *PsqlUserDb) Open(dburl string) {
 		DbL.Fatalln(err)
 	}
 
-	_, err = db.Db.Exec(context.Background(), `create table if not exists userdb (username text unique,password text,token text unique,usertype integer,createdat timestamptz);`)
+	_, err = db.Db.Exec(context.Background(), `create table if not exists userdb (username text unique,secret text unique,totpimage text unique,password text,token text unique,usertype integer,createdat timestamptz);`)
 	if err != nil {
 		DbL.Fatalln(err)
 	}
@@ -31,7 +36,7 @@ func (db *PsqlUserDb) Close() {
 	db.Db.Close()
 }
 
-func (db *PsqlUserDb) Add(Username string, Password string, UserType int) (err error) {
+func (db *PsqlUserDb) Add(Username string, Secret string, TotpImage string, Password string, UserType int) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("uuid error") // uuid may panic
@@ -44,7 +49,7 @@ func (db *PsqlUserDb) Add(Username string, Password string, UserType int) (err e
 	if err != nil {
 		return
 	}
-	_, err = db.Db.Exec(context.Background(), `insert into userdb (username,password,token,usertype,createdat) values ($1,$2,$3,$4,$5);`, Username, string(bytes), uuid.New().String(), UserType, time.Now())
+	_, err = db.Db.Exec(context.Background(), `insert into userdb (username,secret,totpimage,password,token,usertype,createdat) values ($1,$2,$3,$4,$5,$6,$7);`, Username, Secret, TotpImage, string(bytes), uuid.New().String(), UserType, time.Now())
 	return
 }
 
@@ -69,6 +74,62 @@ func (db *PsqlUserDb) UpdatePw(Username string, Password string) (err error) {
 		return
 	}
 	_, err = db.Db.Exec(context.Background(), `update userdb set password=$1 where username=$2;`, string(bytes), Username)
+	return
+}
+
+func (db *PsqlUserDb) UpdateOtpSecret(Username string) (err error) {
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      "exatorrent",
+		AccountName: Username,
+	})
+	if err != nil {
+		panic(err)
+	}
+	Secret := key.Secret()
+	_, err = db.Db.Exec(context.Background(), `update userdb set secret=$1 where username=$2;`, string(Secret), Username)
+	if err != nil {
+		panic(err)
+	}
+	// convert TOTP to image
+	var buf bytes.Buffer
+	img, err := key.Image(500, 500)
+	if err != nil {
+		panic(err)
+	}
+	png.Encode(&buf, img)
+	TotpImage := base64.StdEncoding.EncodeToString(buf.Bytes())
+	_, err = db.Db.Exec(context.Background(), `update userdb set totpimage=$1 where username=$2;`, string(TotpImage), Username)
+	return
+}
+
+func (db *PsqlUserDb) DeleteOtpSecret(Username string) (err error) {
+	_, err = db.Db.Exec(context.Background(), `update userdb set secret=$1 where username=$2;`, "", Username)
+	if err != nil {
+		panic(err)
+	}
+	_, err = db.Db.Exec(context.Background(), `update userdb set totpimage=$1 where username=$2;`, "", Username)
+	return
+}
+
+func (db *PsqlUserDb) GetOtpSecret(Username string) (secret string, err error) {
+	secret = ""
+	row := db.Db.QueryRow(context.Background(), `select secret from userdb where username=$1;`, Username)
+	err = row.Scan(&secret)
+	if err != nil {
+		DbL.Printf("Error reading TOTP secret %s", err)
+		DbL.Fatal(err)
+	}
+	return
+}
+
+func (db *PsqlUserDb) GetTotpImage(Username string) (image string, err error) {
+	image = ""
+	row := db.Db.QueryRow(context.Background(), `select totpimage from userdb where username=$1;`, Username)
+	err = row.Scan(&image)
+	if err != nil {
+		DbL.Printf("Error reading TOTP image %s", err)
+		DbL.Fatal(err)
+	}
 	return
 }
 
@@ -108,6 +169,22 @@ func (db *PsqlUserDb) GetUsers() (ret []*User) {
 		ret = append(ret, &user)
 	}
 	return
+}
+
+func (db *PsqlUserDb) IsTotpSet(Username string) (b bool) {
+	var totpSecret string
+	row := db.Db.QueryRow(context.Background(), `select secret from userdb where username=$1;`, Username)
+	err := row.Scan(&totpSecret)
+	if err != nil {
+		return false
+	}
+	if totpSecret == "" {
+		DbL.Printf("Totp status is %t for user %s", false, Username)
+		return false
+	} else {
+		DbL.Printf("Totp status is %t for user %s", true, Username)
+		return true
+	}
 }
 
 func (db *PsqlUserDb) Validate(Username string, Password string) (ut int, b bool) {

@@ -71,12 +71,17 @@ type LockStateDb interface {
 type UserDb interface {
 	Open(string)
 	Close()
-	Add(string, string, int) error // Username , Password , Usertype
+	Add(string, string, string, string, int) error // Username , Secret , TotpImage , Password , Usertype
 	ChangeType(string, string) error
 	Delete(string) error
 	UpdatePw(string, string) error
+	UpdateOtpSecret(string) error        // Username
+	DeleteOtpSecret(string) error        // Username
+	GetOtpSecret(string) (string, error) // Username
+	GetTotpImage(string) (string, error) // Username
 	GetUsers() []*User
 	Validate(string, string) (int, bool)
+	IsTotpSet(string) bool // Username
 	ValidateToken(string) (string, int, error)
 	SetToken(string, string) error
 }

@@ -28,8 +28,9 @@
     Send({
       command: 'adduser',
       data1: newusername,
-      data2: newpassword,
-      data3: newusertype,
+      data2: "",
+      data3: newpassword,
+      data4: newusertype,
       aop: 1
     });
   };

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pquerna/otp/totp"
 )
 
 func AuthCheck(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +162,25 @@ func rauthHelper(w http.ResponseWriter, r *http.Request) (username string, usert
 	if err != nil {
 		return "", -1, "", err
 	}
+	username = cred.Data1
+	totpCode := cred.Data3
+	totpStatus := Engine.UDb.IsTotpSet(username)
+	var totpSecret string
+	Warn.Printf("User %s have TOTP status: %t, code: %s", username, totpStatus, totpCode)
+	if totpStatus {
+		totpSecret, err = Engine.UDb.GetOtpSecret(username)
+		if err != nil {
+			Warn.Printf("Error while reading TOTP secret: $s", err)
+		}
+		valid := totp.Validate(totpCode, totpSecret)
+		if valid {
+			Info.Printf("Successful validate TOTP for %s", username)
+		} else {
+			Warn.Printf("Unsuccessful validate TOTP for %s", username)
+			return "", -1, "", fmt.Errorf("invalid TOTP code")
+		}
+	}
+
 	if len(cred.Data1) < 5 || len(cred.Data2) < 5 {
 		return "", -1, "", fmt.Errorf("invalid credentials")
 	}
@@ -180,6 +200,5 @@ func rauthHelper(w http.ResponseWriter, r *http.Request) (username string, usert
 		Expires:  time.Now().Add(48 * time.Hour),
 		SameSite: http.SameSiteStrictMode,
 	})
-	username = cred.Data1
 	return username, usertype, token, nil
 }

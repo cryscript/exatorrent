@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { dontstart, Send, SignOut, socket, adminmode, isAdmin, engconfig, fileSize, diskstats, nooftrackersintrackerdb } from './core';
+  import { dontstart, Send, SignOut, socket, adminmode, isAdmin, engconfig, fileSize, diskstats, nooftrackersintrackerdb, totpdata } from './core';
   import slocation from 'slocation';
 
   let ds = false;
@@ -18,6 +18,7 @@
   let newpassword: string = '';
 
   let diskstatsOpen = false;
+  let totpOpen = false;
   let miscOpen = false;
   let miscfirsttime = true;
 
@@ -46,6 +47,19 @@
   };
 
   $: whenengconfigChange($engconfig);
+
+  let totpaction = () => {
+    if (totpOpen === false) {
+      Send({
+        command: 'totpdata',
+        data1: localStorage.getItem('exausername'),
+        aop: 1
+      });
+      totpOpen = true;
+    } else {
+      totpOpen = false;
+    }
+  };
 
   let diskusageaction = () => {
     if (diskstatsOpen === false) {
@@ -145,6 +159,77 @@
             </label>
           </div>
         </div>
+      {/if}
+    </div>
+  </div>
+</div>
+
+<div class="mx-auto max-w-xl">
+  <div class="bg-black grid grid-flow-row text-white rounded-lg m-3 p-2 cursor-pointer focus:outline-none focus-within:bg-black noHL">
+    <div class="flex items-center justify-between flex-wrap py-1 px-3">
+      <div class="w-0 flex-1 flex items-center" on:click={totpaction}>
+        <p class="ml-3 font-medium  truncate">2FA Setup</p>
+      </div>
+      {#if totpOpen === true}
+        <button
+          type="button"
+          class="flex p-2 rounded-md bg-neutral-800 focus:outline-none flex-shrink-0"
+          on:click={() => {
+            Send({
+              command: 'totpdata',
+              data1: localStorage.getItem('exausername'),
+              aop: 1
+            });
+          }}>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+      {/if}
+
+      <button type="button" class="-mr-1 flex p-2 rounded-md bg-neutral-800 focus:outline-none flex-shrink-0 mx-1" on:click={totpaction}>
+        {#if totpOpen === true}
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+          </svg>
+        {:else}
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        {/if}
+      </button>
+    </div>
+    <div class="flex flex-col">
+      {#if totpOpen === true}
+        <div class="m-2 p-2 break-all">
+          TOTP enabled: {$totpdata?.Enabled}
+        </div>
+        {#if $totpdata?.Enabled === true}
+          <div class="m-2 p-2 break-all">
+            <img src="data:image/png;base64, {$totpdata?.Image}" alt="Scan this QR code" />
+          </div>
+          <div class="m-2 p-2 break-all">
+            TOTP Secret is: {$totpdata?.Secret}
+          </div>
+          <button
+            class="m-2 bg-zinc-800 py-3 max-w-3xl rounded-md justify-center"
+            on:click={() => {
+              Send({
+                command: 'deletetotp',
+                data1: localStorage.getItem('exausername'),
+                aop: 1
+              });
+            }}>Disable TOTP</button>
+        {/if}
+        <button
+          class="m-2 bg-zinc-800 py-3 max-w-3xl rounded-md justify-center"
+          on:click={() => {
+            Send({
+              command: 'setuptotp',
+              data1: localStorage.getItem('exausername'),
+              aop: 1
+            });
+          }}>Set new TOTP secret</button>
       {/if}
     </div>
   </div>

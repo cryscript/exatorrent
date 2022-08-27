@@ -9,6 +9,7 @@
   // Signing in
   let exausername: string;
   let exapassword: string;
+  let exatotpcode: string;
   import { Connect } from './core';
   import { onMount } from 'svelte';
   onMount(() => {
@@ -33,6 +34,7 @@
         }
         localStorage.setItem('exausername', exausername);
         localStorage.setItem('exapassword', exapassword);
+        localStorage.setItem('exatotpcode', exatotpcode);
         Connect();
       } else {
         alert('Password Field Cannot be Empty');
@@ -94,7 +96,20 @@
           </svg>
         </button>
       </div>
-
+      
+      <div class="flex bg-neutral-800 rounded-md my-2 appearance-none border border-neutral-800 w-full">
+        <label for="totpcode" class="sr-only">TOTP code</label>
+        <input
+          id="totpcode"
+          name="code"
+          type="tel"
+          bind:value={exatotpcode}
+          on:keydown={entertosignin}
+          pattern="[0-9]{6}"
+          required={false}
+          class=" bg-neutral-800 appearance-none rounded-md w-full flex-grow px-3 py-2  border-none placeholder-neutral-500 text-neutral-200  focus:outline-none"
+          placeholder="TOTP code" />
+      </div>
       <button type="button" on:click={signIn} class="w-full my-2  py-2 px-4 border-none text-sm font-medium rounded-md text-white bg-blue-900  outline-none focus:outline-none"> Sign in </button>
     </div>
   </div>

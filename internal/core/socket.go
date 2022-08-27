@@ -125,18 +125,61 @@ func wshandler(uc *UserConn, req *ConReq) {
 		case "deletefilepath":
 		case "deletetorrent":
 		//
+		case "totpdata":
+			var totpData TOTP
+			totpData.Enabled = Engine.UDb.IsTotpSet(req.Data1)
+			totpData.Secret, _ = Engine.UDb.GetOtpSecret(req.Data1)
+			totpData.Image, _ = Engine.UDb.GetTotpImage(req.Data1)
+			ret, _ := json.Marshal(DataMsg{Type: "totpdata", Data: totpData})
+			_ = uc.Send(ret)
+			return
+		case "setuptotp":
+			Warn.Printf("Setup TOTP data: %s", req.Data1)
+			if !(len(req.Data1) > 5) {
+				_ = uc.SendMsg("resp", "error", "length of username  must be more than 5")
+				return
+			}
+			if req.Data1 != uc.Username {
+				_ = uc.SendMsg("resp", "error", "you cannot setup TOPT not for yourself")
+				return
+			}
+			err := Engine.UDb.UpdateOtpSecret(req.Data1)
+			if err != nil {
+				_ = uc.SendMsg("resp", "error", "Error setting up TOTP")
+				return
+			}
+			_ = uc.SendMsg("resp", "success", "TOTP was configured for "+req.Data1+" user. Please, refresh data")
+			Info.Println("TOTP was configured for user ", req.Data1)
+			return
+		case "deletetotp":
+			if !(len(req.Data1) > 5) {
+				_ = uc.SendMsg("resp", "error", "length of username  must be more than 5")
+				return
+			}
+			if req.Data1 != uc.Username {
+				_ = uc.SendMsg("resp", "error", "you cannot delete TOTP not for yourself")
+				return
+			}
+			err := Engine.UDb.DeleteOtpSecret(req.Data1)
+			if err != nil {
+				_ = uc.SendMsg("resp", "error", "Error deletting TOTP secret")
+				return
+			}
+			_ = uc.SendMsg("resp", "success", "TOTP was dasabled for "+req.Data1+" user. Please, refresh data")
+			Info.Println("TOTP was disabled for user ", req.Data1)
+			return
 		case "adduser":
-			if !(len(req.Data1) > 5 || len(req.Data2) > 5) {
+			if !(len(req.Data1) > 5 || len(req.Data3) > 5) {
 				_ = uc.SendMsg("resp", "error", "length of username and password must be more than 5")
 				return
 			}
 			var err error
-			if req.Data3 == "admin" {
-				err = Engine.UDb.Add(req.Data1, req.Data2, 1) // Admin
-			} else if req.Data3 == "user" {
-				err = Engine.UDb.Add(req.Data1, req.Data2, 0) // User
-			} else if req.Data3 == "disabled" {
-				err = Engine.UDb.Add(req.Data1, req.Data2, -1) // Disabled
+			if req.Data4 == "admin" {
+				err = Engine.UDb.Add(req.Data1, req.Data2, "", req.Data3, 1) // Admin
+			} else if req.Data4 == "user" {
+				err = Engine.UDb.Add(req.Data1, req.Data2, "", req.Data3, 0) // User
+			} else if req.Data4 == "disabled" {
+				err = Engine.UDb.Add(req.Data1, req.Data2, "", req.Data3, -1) // Disabled
 			} else {
 				_ = uc.SendMsg("resp", "error", "incorrect adduser request")
 				return
@@ -345,7 +388,7 @@ func wshandler(uc *UserConn, req *ConReq) {
 			}
 			Configmu.Lock()
 			if Engine.Econfig.ListenCompletion != newconfig.ListenCompletion {
-				if newconfig.ListenCompletion == false {
+				if !newconfig.ListenCompletion {
 					for _, eachchan := range Engine.onCloseMap {
 						if eachchan != nil {
 							eachchan.Set()
@@ -499,6 +542,49 @@ func wshandler(uc *UserConn, req *ConReq) {
 	}
 
 	switch req.Command {
+	case "totpdata":
+		var totpData TOTP
+		totpData.Enabled = Engine.UDb.IsTotpSet(req.Data1)
+		totpData.Secret, _ = Engine.UDb.GetOtpSecret(req.Data1)
+		totpData.Image, _ = Engine.UDb.GetTotpImage(req.Data1)
+
+		ret, _ := json.Marshal(DataMsg{Type: "totpdata", Data: totpData})
+		_ = uc.Send(ret)
+		return
+	case "setuptotp":
+		if !(len(req.Data1) > 5) {
+			_ = uc.SendMsg("resp", "error", "length of username  must be more than 5")
+			return
+		}
+		if req.Data1 != uc.Username {
+			_ = uc.SendMsg("resp", "error", "you cannot setup TOTP not for yourself")
+			return
+		}
+		err := Engine.UDb.UpdateOtpSecret(req.Data1)
+		if err != nil {
+			_ = uc.SendMsg("resp", "error", "Error setting up TOTP")
+			return
+		}
+		_ = uc.SendMsg("resp", "success", "TOTP was configured for "+req.Data1+" user. Please, refresh data")
+		Info.Println("TOTP was configured for user ", req.Data1)
+		return
+	case "deletetotp":
+		if !(len(req.Data1) > 5) {
+			_ = uc.SendMsg("resp", "error", "length of username  must be more than 5")
+			return
+		}
+		if req.Data1 != uc.Username {
+			_ = uc.SendMsg("resp", "error", "you cannot delete TOTP not for yourself")
+			return
+		}
+		err := Engine.UDb.DeleteOtpSecret(req.Data1)
+		if err != nil {
+			_ = uc.SendMsg("resp", "error", "Error deletting TOTP secret")
+			return
+		}
+		_ = uc.SendMsg("resp", "success", "TOTP was dasabled for "+req.Data1+" user. Please, refresh data")
+		Info.Println("TOTP was disabled for user ", req.Data1)
+		return
 	case "addmagnet":
 		tspec, terr := torrent.TorrentSpecFromMagnetUri(req.Data1)
 		if terr != nil {
