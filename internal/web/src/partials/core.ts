@@ -109,6 +109,11 @@ interface DiskStats {
   used: number;
   usedPercent: number;
 }
+interface TotpData {
+  Enabled: boolean;
+  Secret: string;
+  Image: string;
+}
 
 export let socket: WebSocket;
 export const isSignedIn = writable(false);
@@ -157,6 +162,8 @@ export const diskstats: Writable<DiskStats> = writable({} as DiskStats);
 
 export const nooftrackersintrackerdb: Writable<number> = writable(0);
 
+export const totpdata: Writable<TotpData> = writable({} as TotpData);
+
 export const hasMachinfo: Writable<boolean> = writable(false);
 
 export const terrormsg: Writable<{ has: boolean; msg: string }> = writable({ has: true, msg: '' });
@@ -166,6 +173,7 @@ export const versionchecked: Writable<boolean> = writable(false);
 let curobj: Location;
 let un = '';
 let pw = '';
+let otp = '';
 let firsttimecon = true;
 
 let wonopenfn = () => {
@@ -190,7 +198,7 @@ let werrorfn = () => {
   try {
     fetch('/api/auth', {
       method: 'POST',
-      body: JSON.stringify({ data1: un, data2: pw })
+      body: JSON.stringify({ data1: un, data2: pw, data3: otp })
     })
       .then((res) => {
         if (res.status >= 200 && res.status <= 299) {
@@ -227,6 +235,7 @@ let werrorfn = () => {
 export let Connect = () => {
   un = localStorage.getItem('exausername');
   pw = localStorage.getItem('exapassword');
+  otp = localStorage.getItem('exatotpcode');
 
   if (un != '' && un != undefined && un != null) {
     if (pw != '' && pw != undefined && pw != null) {
@@ -463,6 +472,13 @@ export let SocketHandler = (event: MessageEvent) => {
         nooftrackersintrackerdb.set(0);
       }
       break;
+    case 'totpdata':
+      if (!(msg.data == null)) {
+        totpdata.set(msg.data as TotpData);
+      } else {
+        totpdata.set({} as TotpData);
+      }
+      break;
   }
 };
 
@@ -471,6 +487,7 @@ export let SignOut = () => {
   localStorage.removeItem('exapassword');
   localStorage.removeItem('exasession');
   localStorage.removeItem('exausertype');
+  localStorage.removeItem('exatotpcode');
   localStorage.removeItem('dontstart');
   // Remove Cookies
   document.cookie.split(';').forEach((c) => {

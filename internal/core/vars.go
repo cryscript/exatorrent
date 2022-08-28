@@ -482,6 +482,7 @@ type ConReq struct {
 	Data1   string `json:"data1"`
 	Data2   string `json:"data2"`
 	Data3   string `json:"data3"`
+	Data4   string `json:"data4"`
 	Aop     int    `json:"aop"`
 }
 
@@ -508,6 +509,12 @@ type DiskUsageStat struct {
 	Free        uint64  `json:"free"`
 	Used        uint64  `json:"used"`
 	UsedPercent float64 `json:"usedPercent"`
+}
+
+type TOTP struct {
+	Enabled bool   `json:"Enabled"`
+	Secret  string `json:"Secret"`
+	Image   string `json:"Image"`
 }
 
 type UserConnMsg struct {

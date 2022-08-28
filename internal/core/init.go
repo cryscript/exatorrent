@@ -254,7 +254,7 @@ func Initialize() {
 	if errors.Is(err, os.ErrNotExist) {
 		if pw {
 			Info.Println(`Adding Admin user with username "` + auser + `" and custom password`)
-			er := Engine.UDb.Add(auser, os.Getenv("EXAPASSWORD"), 1)
+			er := Engine.UDb.Add(auser, "", "", os.Getenv("EXAPASSWORD"), 1)
 			if er != nil {
 				Err.Fatalln("Unable to add admin user to adminless exatorrent instance :", er)
 			}
@@ -264,7 +264,7 @@ func Initialize() {
 			}
 		} else {
 			Info.Println(`Adding Admin user with username "` + auser + `" and password "adminpassword"`)
-			er := Engine.UDb.Add(auser, "adminpassword", 1)
+			er := Engine.UDb.Add(auser, "", "", "adminpassword", 1)
 			if er != nil {
 				Err.Fatalln("Unable to add admin user to adminless exatorrent instance :", er)
 			}
